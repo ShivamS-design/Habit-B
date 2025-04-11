@@ -1,33 +1,48 @@
-const Task = require('../models/Task');
+import Task from '../models/Task.js';
 
-// Get all tasks for a user
 const getTasks = async (req, res) => {
-  const tasks = await Task.find({ userId: req.user.id });
-  res.json({ tasks });
+  try {
+    const tasks = await Task.find({ userId: req.user.id });
+    res.json({ tasks });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Create a new task
 const createTask = async (req, res) => {
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ message: 'Task name is required' });
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: 'Task name is required' });
 
-  const newTask = new Task({ userId: req.user.id, name });
-  await newTask.save();
-
-  res.status(201).json({ message: 'Task created', task: newTask });
+    const newTask = new Task({ userId: req.user.id, name });
+    await newTask.save();
+    res.status(201).json({ message: 'Task created', task: newTask });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Mark task as completed
 const completeTask = async (req, res) => {
-  const { completed } = req.body;
-  const task = await Task.findByIdAndUpdate(req.params.taskId, { completed }, { new: true });
-  res.json({ message: 'Task updated', task });
+  try {
+    const { completed } = req.body;
+    const task = await Task.findByIdAndUpdate(
+      req.params.taskId, 
+      { completed }, 
+      { new: true }
+    );
+    res.json({ message: 'Task updated', task });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-// Delete a task
 const deleteTask = async (req, res) => {
-  await Task.findByIdAndDelete(req.params.taskId);
-  res.json({ message: 'Task deleted' });
+  try {
+    await Task.findByIdAndDelete(req.params.taskId);
+    res.json({ message: 'Task deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
-module.exports = { getTasks, createTask, completeTask, deleteTask };
+export { getTasks, createTask, completeTask, deleteTask };
