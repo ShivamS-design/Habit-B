@@ -3,7 +3,6 @@ import LocalData from '../models/LocalData.js';
 
 const router = express.Router();
 
-// Save local storage data
 router.post('/:key', async (req, res) => {
   try {
     const { key } = req.params;
@@ -15,7 +14,6 @@ router.post('/:key', async (req, res) => {
       { userId, key, value },
       { upsert: true, new: true }
     );
-    
     res.json({ success: true });
   } catch (error) {
     console.error('Error saving localStorage:', error);
@@ -23,12 +21,10 @@ router.post('/:key', async (req, res) => {
   }
 });
 
-// Get local storage data
 router.get('/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const userId = req.headers['x-user-id'] || 'anonymous';
-    
     const data = await LocalData.findOne({ userId, key });
     res.json({ success: true, value: data ? data.value : null });
   } catch (error) {
@@ -37,12 +33,10 @@ router.get('/:key', async (req, res) => {
   }
 });
 
-// Get all data for a user
 router.get('/', async (req, res) => {
   try {
     const userId = req.headers['x-user-id'] || 'anonymous';
-    
-    const data = await LocalData.getAllForUser(userId);
+    const data = await LocalData.find({ userId }); // Changed from getAllForUser
     res.json({ success: true, data });
   } catch (error) {
     console.error('Error getting all localStorage data:', error);
@@ -50,12 +44,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Delete local storage data
 router.delete('/:key', async (req, res) => {
   try {
     const { key } = req.params;
     const userId = req.headers['x-user-id'] || 'anonymous';
-    
     await LocalData.deleteOne({ userId, key });
     res.json({ success: true });
   } catch (error) {
