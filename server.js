@@ -50,19 +50,29 @@ async function connectToDatabase() {
 
 // Middleware
 app.use(express.json());
-app.use(cors({
-  origin: ["http://localhost:3000",'https://golden-warriors-levelup.netlify.app/'],
-  credentials: true
-}));
-app.get('/', (req, res) => {
-  res.send(
-    {
-      activeStatus: true,
-      error: false,
-    }
-  );
-}
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "https://golden-warriors-levelup.netlify.app/"],
+    credentials: true,
+  })
 );
+
+// Root Route
+app.get('/', (req, res) => {
+  res.send({
+    activeStatus: true,
+    error: false,
+    message: "Welcome to the Habit Tracker API",
+  });
+});
+
+// Default API Route
+app.get('/api', (req, res) => {
+  res.send({
+    message: "Welcome to the API! Access different endpoints using /api/auth, /api/tasks, etc.",
+  });
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
@@ -73,13 +83,20 @@ app.use('/api/leaderboard', leaderboardRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
+  res.status(200).json({
     status: 'healthy',
-    dbStatus: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    dbStatus: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
   });
 });
 
-// Error handling middleware
+// Handle Undefined API Routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    message: 'API route not found',
+  });
+});
+
+// Error Handling Middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
@@ -97,7 +114,7 @@ connectToDatabase()
       });
     }
   })
-  .catch(err => {
+  .catch((err) => {
     console.error('Failed to initialize application:', err);
     process.exit(1);
   });
