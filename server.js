@@ -8,7 +8,7 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
 import habitRoutes from './routes/habitRoutes.js';
-import localStorageRoutes from './routes/LocalStorageRoutes.js';
+import localStorageRoutes from './routes/localStorageRoutes.js'; // Fixed case sensitivity
 import spinWheelRoutes from './routes/spinWheelRoutes.js';
 import leaderboardRoutes from './routes/leaderboardRoutes.js';
 
@@ -29,13 +29,10 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
-// Database connection
+// Database connection (updated for Mongoose 6+)
 const connectDB = async () => {
   try {
-    await mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(MONGODB_URI);
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('MongoDB connection error:', err);
@@ -56,11 +53,19 @@ app.use(
 );
 
 // Health check endpoint
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.json({
     status: 'running',
     environment: NODE_ENV,
     timestamp: new Date().toISOString(),
+    endpoints: {
+      auth: '/api/auth',
+      tasks: '/api/tasks',
+      habits: '/api/habits',
+      storage: '/api/local-storage',
+      spin: '/api/spin-wheel',
+      leaderboard: '/api/leaderboard'
+    }
   });
 });
 
@@ -74,7 +79,10 @@ app.use('/api/leaderboard', leaderboardRoutes);
 
 // 404 Handler
 app.use((req, res) => {
-  res.status(404).json({ message: 'Route not found' });
+  res.status(404).json({ 
+    message: 'Route not found',
+    suggestion: 'Try accessing /api for available endpoints' 
+  });
 });
 
 // Error handler
@@ -101,5 +109,3 @@ const startServer = async () => {
 };
 
 startServer();
-
-export default app;
