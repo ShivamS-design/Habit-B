@@ -98,7 +98,11 @@ router.route('/:id')
  * @access  Private/Admin
  */
 router.route('/:id')
-  .patch(validateUserUpdate, updateUserProfile);
+  .patch(
+    upload.single('avatar'),
+    validateUserUpdate,
+    updateUserProfile
+  );
 
 /**
  * @desc    Delete any user account (Admin only)
