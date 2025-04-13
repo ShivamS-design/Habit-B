@@ -15,18 +15,18 @@ const router = express.Router();
 // Apply authentication middleware to all routes
 router.use(verifyUser);
 
-// User statistics routes
+// Core stats endpoints
 router.route('/')
-  .get(getUserStats)    // GET /api/stats - Get user stats
-  .patch(updateUserStats); // PATCH /api/stats - Update user stats
+  .get(getUserStats)       // GET user stats
+  .patch(updateUserStats); // UPDATE user stats
 
-// Game-specific routes
-router.get('/games/:gameId', getGameSessionStats); // GET /api/stats/games/:gameId - Get game stats
+// Game-specific stats
+router.get('/games/:gameId', getGameSessionStats); // GET game session stats
 
-// Progress and activity routes
-router.get('/leaderboard', getLeaderboardStats); // GET /api/stats/leaderboard - Get leaderboard
-router.get('/progress', getUserProgress); // GET /api/stats/progress - Get user progress
-router.get('/activity', getActivityHistory); // GET /api/stats/activity - Get activity history
-router.get('/milestones', getMilestoneAchievements); // GET /api/stats/milestones - Get milestones
+// Progress tracking
+router.get('/leaderboard', getLeaderboardStats); // GET leaderboard
+router.get('/progress', getUserProgress);       // GET user progress
+router.get('/activity', getActivityHistory);    // GET activity history
+router.get('/milestones', getMilestoneAchievements); // GET milestones
 
 export default router;
