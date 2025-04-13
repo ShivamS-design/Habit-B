@@ -6,14 +6,14 @@ const GameProgressSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Progress must belong to a user'],
-    index: true
+    required: [true, 'Progress must belong to a user']
+    // Removed index: true here since we have compound index below
   },
   gameId: {
     type: String,
     required: [true, 'Game ID is required'],
-    enum: ['word-scrambler', 'spin-wheel', 'habit-challenge', 'cosmic-chess', 'recovery-game'],
-    index: true
+    enum: ['word-scrambler', 'spin-wheel', 'habit-challenge', 'cosmic-chess', 'recovery-game']
+    // Removed index: true here since we have compound index below
   },
 
   // Game State Management
@@ -113,12 +113,12 @@ const GameProgressSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Indexes for optimized queries
-GameProgressSchema.index({ userId: 1, gameId: 1 }, { unique: true });
-GameProgressSchema.index({ gameId: 1, 'achievementHistory.achievementId': 1 });
+// Optimized Indexes
+GameProgressSchema.index({ userId: 1, gameId: 1 }, { unique: true }); // Compound primary key
+GameProgressSchema.index({ 'achievementHistory.achievementId': 1 });
 GameProgressSchema.index({ 'sessionHistory.endTime': -1 });
-GameProgressSchema.index({ xpEarned: -1 });
-GameProgressSchema.index({ highestScore: -1 });
+GameProgressSchema.index({ xpEarned: -1 }); // For leaderboards
+GameProgressSchema.index({ highestScore: -1 }); // For leaderboards
 
 // Virtual Properties
 GameProgressSchema.virtual('totalSessions').get(function() {
@@ -256,25 +256,4 @@ GameProgressSchema.statics.getGameAnalytics = async function(gameId) {
       $group: {
         _id: null,
         totalPlayers: { $sum: 1 },
-        averageXp: { $avg: '$xpEarned' },
-        averagePlayTime: { $avg: '$playTime' },
-        averageCompletion: { $avg: '$completionPercentage' },
-        topScore: { $max: '$highestScore' }
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        totalPlayers: 1,
-        averageXp: { $round: ['$averageXp', 1] },
-        averagePlayTimeHours: { $round: [{ $divide: ['$averagePlayTime', 3600] }, 1] },
-        averageCompletion: { $round: ['$averageCompletion', 1] },
-        topScore: 1
-      }
-    }
-  ]);
-};
-
-const GameProgress = mongoose.model('GameProgress', GameProgressSchema);
-
-export default GameProgress;
+        averageXp: { $avg: '$xpEarned
