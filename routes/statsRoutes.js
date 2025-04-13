@@ -8,59 +8,59 @@ import {
   getActivityHistory,
   getMilestoneAchievements
 } from '../controllers/statsController.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { verifyUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 // Apply authentication middleware to all routes
-router.use(verifyToken);
+router.use(verifyUser);
 
 /**
- * @desc    Get comprehensive user stats
- * @route   GET /api/stats
- * @access  Private
+ * @route GET /api/stats
+ * @desc Get comprehensive user stats
+ * @access Private
  */
 router.get('/', getUserStats);
 
 /**
- * @desc    Update user stats (XP, achievements, etc.)
- * @route   PATCH /api/stats
- * @access  Private
+ * @route PATCH /api/stats
+ * @desc Update user stats (XP, achievements, etc.)
+ * @access Private
  */
 router.patch('/', updateUserStats);
 
 /**
- * @desc    Get game session statistics
- * @route   GET /api/stats/games/:gameId
- * @access  Private
+ * @route GET /api/stats/games/:gameId
+ * @desc Get game session statistics
+ * @access Private
  */
 router.get('/games/:gameId', getGameSessionStats);
 
 /**
- * @desc    Get leaderboard statistics
- * @route   GET /api/stats/leaderboard
- * @access  Private
+ * @route GET /api/stats/leaderboard
+ * @desc Get leaderboard statistics
+ * @access Private
  */
 router.get('/leaderboard', getLeaderboardStats);
 
 /**
- * @desc    Get user progress toward goals
- * @route   GET /api/stats/progress
- * @access  Private
+ * @route GET /api/stats/progress
+ * @desc Get user progress toward goals
+ * @access Private
  */
 router.get('/progress', getUserProgress);
 
 /**
- * @desc    Get user activity history
- * @route   GET /api/stats/activity
- * @access  Private
+ * @route GET /api/stats/activity
+ * @desc Get user activity history (last 50 activities)
+ * @access Private
  */
 router.get('/activity', getActivityHistory);
 
 /**
- * @desc    Get milestone achievements
- * @route   GET /api/stats/milestones
- * @access  Private
+ * @route GET /api/stats/milestones
+ * @desc Get achieved milestones
+ * @access Private
  */
 router.get('/milestones', getMilestoneAchievements);
 
