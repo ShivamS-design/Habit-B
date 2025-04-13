@@ -250,4 +250,26 @@ GameProgressSchema.statics.getGameAnalytics = async function(gameId) {
     { 
       $group: {
         _id: null,
-        totalPlayers
+        totalPlayers: { $sum: 1 },
+        averageXp: { $avg: '$xpEarned' },
+        averagePlayTime: { $avg: '$playTime' },
+        averageCompletion: { $avg: '$completionPercentage' },
+        topScore: { $max: '$highestScore' }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        totalPlayers: 1,
+        averageXp: { $round: ['$averageXp', 1] },
+        averagePlayTimeHours: { $round: [{ $divide: ['$averagePlayTime', 3600] }, 1] },
+        averageCompletion: { $round: ['$averageCompletion', 1] },
+        topScore: 1
+      }
+    }
+  ]);
+};
+
+const GameProgress = mongoose.model('GameProgress', GameProgressSchema);
+
+export default GameProgress;
