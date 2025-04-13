@@ -1,6 +1,6 @@
 {
   "name": "habit-tracker",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Gamified habit tracking application with MongoDB backend",
   "main": "server.js",
   "type": "module",
@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "prepare": "husky install",
     "migrate": "node ./migrations/run-migrations.js",
-    "seed": "node ./seeds/seed-database.js"
+    "seed": "node ./seeds/seed-database.js",
+    "postinstall": "npm run migrate && npm run seed"
   },
   "keywords": [
     "gamification",
@@ -31,17 +32,23 @@
     "express": "^4.18.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^6.8.1",
-    "express-validator": "^7.0.0", 
+    "express-validator": "^7.0.0",
     "helmet": "^7.1.0",
     "hpp": "^0.2.3",
     "joi": "^17.12.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.1.3",
     "morgan": "^1.10.0",
+    "multer": "^1.4.5",
     "swagger-ui-express": "^5.0.0",
-    "yamljs": "^0.3.0"
+    "yamljs": "^0.3.0",
+    "crypto-js": "^4.1.1",
+    "dayjs": "^1.11.10",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.5",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
@@ -62,7 +69,10 @@
     "coveragePathIgnorePatterns": [
       "/node_modules/",
       "/tests/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    }
   },
   "lint-staged": {
     "**/*.{js,json}": [
