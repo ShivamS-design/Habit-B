@@ -11,9 +11,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky install",
-    "migrate": "node ./migrations/run-migrations.js",
+    "migrate": "echo \"Skipping migration: run-migrations.js not found\"",
     "seed": "node ./seeds/seed-database.js",
-    "postinstall": "npm run migrate && npm run seed",
     "check-updates": "npx npm-check-updates"
   },
   "keywords": [
