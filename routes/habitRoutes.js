@@ -8,27 +8,33 @@ import {
   getHabitAnalytics,
   calculateStreaks
 } from '../controllers/habitController.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { verifyUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.use(verifyToken);
+// Protect all routes with authentication middleware
+router.use(verifyUser);
 
+// Habit management routes
 router.route('/')
-  .get(getHabits)
-  .post(createHabit);
+  .get(getHabits)          // Get all habits for the authenticated user
+  .post(createHabit);      // Create a new habit
 
+// Analytics routes
 router.route('/analytics')
-  .get(getHabitAnalytics);
+  .get(getHabitAnalytics); // Get habit analytics for the user
 
+// Streak calculation route
 router.route('/calculate-streaks')
-  .post(calculateStreaks);
+  .post(calculateStreaks); // Calculate streaks for habits
 
+// Habit-specific routes
 router.route('/:id')
-  .patch(updateHabit)
-  .delete(deleteHabit);
+  .patch(updateHabit)      // Update a specific habit
+  .delete(deleteHabit);    // Delete a specific habit
 
+// Habit completion route
 router.route('/:id/complete')
-  .patch(completeHabit);
+  .patch(completeHabit);   // Mark a habit as completed
 
 export default router;
