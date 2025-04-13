@@ -12,7 +12,7 @@ const verifyToken = promisify(jwt.verify);
  * @param   {Object} res - Express response object
  * @param   {Function} next - Express next middleware
  */
-export const verifyUser = async (req, res, next) => {
+const verifyUser = async (req, res, next) => {
   try {
     // 1. Get token from headers or cookies
     let token;
@@ -45,10 +45,9 @@ export const verifyUser = async (req, res, next) => {
 
     // 5. Grant access to protected route
     req.user = currentUser;
-    res.locals.user = currentUser; // For templates if needed
+    res.locals.user = currentUser;
     next();
   } catch (error) {
-    // Handle specific JWT errors
     if (error.name === 'TokenExpiredError') {
       return next(new AppError('Session expired. Please log in again', 401));
     }
@@ -64,7 +63,7 @@ export const verifyUser = async (req, res, next) => {
  * @param   {...String} roles - Allowed user roles
  * @return  {Function} Middleware function
  */
-export const restrictTo = (...roles) => {
+const restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
       return next(
@@ -78,7 +77,7 @@ export const restrictTo = (...roles) => {
 /**
  * @desc    Optional authentication for non-critical routes
  */
-export const verifyOptional = async (req, res, next) => {
+const verifyOptional = async (req, res, next) => {
   try {
     let token;
     if (
@@ -104,12 +103,12 @@ export const verifyOptional = async (req, res, next) => {
   }
 };
 
-// Named exports
-export { verifyUser, restrictTo, verifyOptional };
-
-// Default export
-export default {
+// Export all middleware functions
+export {
   verifyUser,
   restrictTo,
   verifyOptional
 };
+
+// Alternative: Default export as an object
+// export default { verifyUser, restrictTo, verifyOptional };
