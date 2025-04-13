@@ -6,12 +6,14 @@ const GameProgressSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Progress must belong to a user']
+    required: [true, 'Progress must belong to a user'],
+    index: true
   },
   gameId: {
     type: String,
     required: [true, 'Game ID is required'],
-    enum: ['word-scrambler', 'spin-wheel', 'habit-challenge', 'cosmic-chess', 'recovery-game']
+    enum: ['word-scrambler', 'spin-wheel', 'habit-challenge', 'cosmic-chess', 'recovery-game'],
+    index: true
   },
 
   // Game State Management
@@ -20,19 +22,44 @@ const GameProgressSchema = new mongoose.Schema({
     required: [true, 'Progress data is required'],
     validate: {
       validator: function(v) {
-        return JSON.stringify(v).length <= 50000;
+        try {
+          return JSON.stringify(v).length <= 50000; // 50KB max
+        } catch (e) {
+          return false;
+        }
       },
-      message: 'Progress data exceeds maximum size'
+      message: 'Progress data must be serializable and cannot exceed 50KB'
     }
   },
   currentLevel: {
     type: Number,
     default: 1,
-    min: 1
+    min: 1,
+    validate: {
+      validator: Number.isInteger,
+      message: 'Level must be an integer'
+    }
   },
   checkpoints: [{
-    level: Number,
-    data: mongoose.Schema.Types.Mixed,
+    level: {
+      type: Number,
+      min: 1,
+      required: true
+    },
+    data: {
+      type: mongoose.Schema.Types.Mixed,
+      required: true,
+      validate: {
+        validator: function(v) {
+          try {
+            return JSON.stringify(v).length <= 25000; // 25KB max per checkpoint
+          } catch (e) {
+            return false;
+          }
+        },
+        message: 'Checkpoint data must be serializable and cannot exceed 25KB'
+      }
+    },
     createdAt: {
       type: Date,
       default: Date.now
@@ -43,12 +70,14 @@ const GameProgressSchema = new mongoose.Schema({
   xpEarned: {
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+    get: v => Math.round(v)
   },
-  playTime: {
+  playTime: { // in seconds
     type: Number,
     default: 0,
-    min: 0
+    min: 0,
+    get: v => Math.round(v)
   },
   attempts: {
     type: Number,
@@ -63,33 +92,79 @@ const GameProgressSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: 0,
-    max: 100
+    max: 100,
+    get: v => Math.round(v)
   },
 
   // Game Analytics
   sessionHistory: [{
-    startTime: Date,
-    endTime: Date,
-    duration: Number,
-    actions: Number,
-    xpEarned: Number,
+    startTime: {
+      type: Date,
+      required: true
+    },
+    endTime: {
+      type: Date,
+      required: true,
+      validate: {
+        validator: function(v) {
+          return v >= this.startTime;
+        },
+        message: 'End time must be after start time'
+      }
+    },
+    duration: { // in seconds
+      type: Number,
+      min: 0,
+      get: v => Math.round(v)
+    },
+    actions: {
+      type: Number,
+      min: 0
+    },
+    xpEarned: {
+      type: Number,
+      min: 0
+    },
     completed: Boolean
   }],
   achievementHistory: [{
-    achievementId: String,
-    earnedAt: Date,
-    xpReward: Number
+    achievementId: {
+      type: String,
+      required: true
+    },
+    earnedAt: {
+      type: Date,
+      default: Date.now
+    },
+    xpReward: {
+      type: Number,
+      min: 0
+    }
   }],
-  inventorySnapshot: mongoose.Schema.Types.Mixed,
+  inventorySnapshot: {
+    type: mongoose.Schema.Types.Mixed,
+    validate: {
+      validator: function(v) {
+        try {
+          return JSON.stringify(v).length <= 10000; // 10KB max
+        } catch (e) {
+          return false;
+        }
+      },
+      message: 'Snapshot data must be serializable and cannot exceed 10KB'
+    }
+  },
 
   // Version Control
   gameVersion: {
     type: String,
-    required: [true, 'Game version is required']
+    required: [true, 'Game version is required'],
+    match: [/^\d+\.\d+\.\d+$/, 'Version must be in semantic format (X.Y.Z)']
   },
   dataVersion: {
     type: Number,
-    default: 1
+    default: 1,
+    min: 1
   },
 
   // Synchronization
@@ -107,16 +182,23 @@ const GameProgressSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toJSON: { 
+    virtuals: true,
+    getters: true 
+  },
+  toObject: { 
+    virtuals: true,
+    getters: true 
+  }
 });
 
-// Indexes
+// Indexes for optimized queries
 GameProgressSchema.index({ userId: 1, gameId: 1 }, { unique: true });
-GameProgressSchema.index({ 'achievementHistory.achievementId': 1 });
+GameProgressSchema.index({ gameId: 1, 'achievementHistory.achievementId': 1 });
 GameProgressSchema.index({ 'sessionHistory.endTime': -1 });
 GameProgressSchema.index({ xpEarned: -1 });
 GameProgressSchema.index({ highestScore: -1 });
+GameProgressSchema.index({ completionPercentage: -1 });
 
 // Virtual Properties
 GameProgressSchema.virtual('totalSessions').get(function() {
@@ -124,12 +206,12 @@ GameProgressSchema.virtual('totalSessions').get(function() {
 });
 
 GameProgressSchema.virtual('totalPlayTimeHours').get(function() {
-  return (this.playTime / 3600).toFixed(1);
+  return parseFloat((this.playTime / 3600).toFixed(2));
 });
 
 GameProgressSchema.virtual('averageSessionTime').get(function() {
   return this.totalSessions > 0 
-    ? (this.playTime / this.totalSessions / 60).toFixed(1)
+    ? parseFloat((this.playTime / this.totalSessions / 60).toFixed(1))
     : 0;
 });
 
@@ -139,18 +221,29 @@ GameProgressSchema.virtual('xpPerHour').get(function() {
     : 0;
 });
 
+GameProgressSchema.virtual('lastSession').get(function() {
+  return this.sessionHistory.length > 0 
+    ? this.sessionHistory[this.sessionHistory.length - 1]
+    : null;
+});
+
 // Pre-save hooks
 GameProgressSchema.pre('save', function(next) {
-  if (this.progressData?.levels) {
-    const completedLevels = Object.values(this.progressData.levels)
-      .filter(level => level.completed).length;
-    this.completionPercentage = Math.round(
-      (completedLevels / Object.keys(this.progressData.levels).length) * 100
-    );
+  // Auto-calculate completion percentage if not set
+  if (this.progressData?.levels && !this.isModified('completionPercentage')) {
+    const levels = this.progressData.levels;
+    const completedLevels = Object.values(levels).filter(l => l.completed).length;
+    this.completionPercentage = Math.round((completedLevels / Object.keys(levels).length) * 100);
   }
 
+  // Update highest score if applicable
   if (this.progressData?.score > this.highestScore) {
     this.highestScore = this.progressData.score;
+  }
+
+  // Auto-set sync timestamp
+  if (this.isModified('progressData') || this.isModified('currentLevel')) {
+    this.lastSynced = new Date();
   }
 
   next();
@@ -158,16 +251,21 @@ GameProgressSchema.pre('save', function(next) {
 
 // Instance Methods
 GameProgressSchema.methods.addSession = function(sessionData) {
+  const duration = sessionData.duration || 
+    Math.round((sessionData.endTime - sessionData.startTime) / 1000);
+
   this.sessionHistory.push({
-    startTime: sessionData.startTime || new Date(Date.now() - (sessionData.duration * 1000)),
-    endTime: new Date(),
-    duration: sessionData.duration,
+    startTime: sessionData.startTime || new Date(Date.now() - (duration * 1000)),
+    endTime: sessionData.endTime || new Date(),
+    duration,
     actions: sessionData.actions || 0,
     xpEarned: sessionData.xpEarned || 0,
     completed: sessionData.completed || false
   });
 
-  this.playTime += sessionData.duration;
+  this.playTime += duration;
+  this.xpEarned += sessionData.xpEarned || 0;
+  
   return this.save();
 };
 
@@ -183,16 +281,21 @@ GameProgressSchema.methods.addAchievement = function(achievementId, xpReward = 0
 };
 
 GameProgressSchema.methods.createCheckpoint = function() {
-  this.checkpoints.push({
-    level: this.currentLevel,
-    data: JSON.parse(JSON.stringify(this.progressData))
-  });
-  
-  if (this.checkpoints.length > 5) {
-    this.checkpoints.shift();
+  try {
+    this.checkpoints.push({
+      level: this.currentLevel,
+      data: JSON.parse(JSON.stringify(this.progressData)) // Deep clone
+    });
+    
+    // Keep only the last 5 checkpoints
+    if (this.checkpoints.length > 5) {
+      this.checkpoints.shift();
+    }
+    
+    return this.save();
+  } catch (err) {
+    throw new AppError('Failed to create checkpoint: Invalid progress data', 400);
   }
-  
-  return this.save();
 };
 
 GameProgressSchema.methods.restoreCheckpoint = function(checkpointIndex = -1) {
@@ -203,22 +306,23 @@ GameProgressSchema.methods.restoreCheckpoint = function(checkpointIndex = -1) {
   if (index >= 0) {
     this.progressData = JSON.parse(JSON.stringify(this.checkpoints[index].data));
     this.currentLevel = this.checkpoints[index].level;
+    this.syncStatus = 'pending';
     return this.save();
   }
   
-  throw new AppError('No checkpoint available', 400);
+  throw new AppError('No checkpoint available', 404);
 };
 
 // Static Methods
 GameProgressSchema.statics.getUserProgress = async function(userId, gameId) {
   return this.findOne({ userId, gameId })
     .populate('userId', 'name avatar level')
-    .lean();
+    .lean({ virtuals: true });
 };
 
 GameProgressSchema.statics.getLeaderboard = async function(gameId, limit = 10) {
   return this.aggregate([
-    { $match: { gameId } },
+    { $match: { gameId, isActive: true } },
     { $sort: { highestScore: -1 } },
     { $limit: limit },
     {
@@ -245,16 +349,17 @@ GameProgressSchema.statics.getLeaderboard = async function(gameId, limit = 10) {
 };
 
 GameProgressSchema.statics.getGameAnalytics = async function(gameId) {
-  return this.aggregate([
-    { $match: { gameId } },
-    { 
+  const results = await this.aggregate([
+    { $match: { gameId, isActive: true } },
+    {
       $group: {
         _id: null,
         totalPlayers: { $sum: 1 },
         averageXp: { $avg: '$xpEarned' },
         averagePlayTime: { $avg: '$playTime' },
         averageCompletion: { $avg: '$completionPercentage' },
-        topScore: { $max: '$highestScore' }
+        topScore: { $max: '$highestScore' },
+        totalSessions: { $sum: { $size: '$sessionHistory' } }
       }
     },
     {
@@ -264,10 +369,13 @@ GameProgressSchema.statics.getGameAnalytics = async function(gameId) {
         averageXp: { $round: ['$averageXp', 1] },
         averagePlayTimeHours: { $round: [{ $divide: ['$averagePlayTime', 3600] }, 1] },
         averageCompletion: { $round: ['$averageCompletion', 1] },
-        topScore: 1
+        topScore: 1,
+        sessionsPerPlayer: { $round: [{ $divide: ['$totalSessions', '$totalPlayers'] }, 1] }
       }
     }
   ]);
+
+  return results[0] || null;
 };
 
 const GameProgress = mongoose.model('GameProgress', GameProgressSchema);
