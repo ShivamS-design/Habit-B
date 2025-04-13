@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import User from './User.js'; // Added missing import
 
 const BadgeSchema = new mongoose.Schema({
   // Basic Information
@@ -66,8 +67,8 @@ const BadgeSchema = new mongoose.Schema({
         'completedHabits',
         'gamesPlayed',
         'daysActive',
-        'shopPurchases',
-        'badgesCollected'
+        'shopPurchases'
+        // Removed 'badgesCollected' as it's not tracked in User.js
       ]
     },
     threshold: {
@@ -181,6 +182,9 @@ BadgeSchema.statics.checkUserQualification = async function(userId, badgeId) {
       break;
     case 'daysActive':
       progress = user.gameStats.daysActive || 0;
+      break;
+    case 'shopPurchases':
+      progress = user.gameStats.shopPurchases || 0;
       break;
     default:
       progress = 0;
