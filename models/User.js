@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const UserSchema = new mongoose.Schema({
   // Authentication Fields
@@ -12,7 +13,7 @@ const UserSchema = new mongoose.Schema({
   email: {
     type: String,
     required: [true, 'Please provide an email'],
-    unique: true,
+    unique: true, // This automatically creates an index
     lowercase: true,
     validate: {
       validator: function(v) {
@@ -28,7 +29,7 @@ const UserSchema = new mongoose.Schema({
   firebaseUid: {
     type: String,
     unique: true,
-    sparse: true
+    sparse: true // This automatically creates an index
   },
   provider: {
     type: String,
@@ -189,18 +190,22 @@ UserSchema.virtual('xpProgress').get(function() {
   return Math.min((this.xp % 100) / 100 * 100, 100);
 });
 
-// Indexes
-UserSchema.index({ email: 1 }, { unique: true });
+// Removed duplicate index definitions - they're already created by 'unique: true' in the schema
+
+// Only keep additional indexes that aren't covered by schema definitions
 UserSchema.index({ xp: -1 }); // For leaderboard queries
 UserSchema.index({ 'gameStats.totalXP': -1 }); // For global ranking
-UserSchema.index({ firebaseUid: 1 }, { unique: true, sparse: true });
 
 // Pre-save hook to hash password
 UserSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+  try {
+    this.password = await bcrypt.hash(this.password, 12);
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Pre-save hook for passwordChangedAt
@@ -221,11 +226,8 @@ UserSchema.methods.passwordChangedAfter = function(JWTTimestamp) {
 };
 
 // Method to check password
-UserSchema.methods.correctPassword = async function(
-  candidatePassword,
-  userPassword
-) {
-  return await bcrypt.compare(candidatePassword, userPassword);
+UserSchema.methods.correctPassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
 // Method to create password reset token
@@ -244,6 +246,8 @@ UserSchema.methods.createPasswordResetToken = function() {
 
 // Method to add XP
 UserSchema.methods.addXP = async function(amount) {
+  if (amount <= 0) return this;
+  
   this.xp += amount;
   this.gameStats.totalXP += amount;
   
@@ -259,30 +263,28 @@ UserSchema.methods.addXP = async function(amount) {
 
 // Method to check badge progress
 UserSchema.methods.checkBadgeProgress = function(badge) {
-  switch(badge.progressMetric) {
-    case 'daysActive':
-      return this.gameStats.daysActive || 0;
-    case 'currentStreak':
-      return this.gameStats.currentStreak;
-    case 'totalXP':
-      return this.gameStats.totalXP;
-    case 'earlyTasks':
-      return this.gameStats.earlyTasks || 0;
-    case 'nightTasks':
-      return this.gameStats.nightTasks || 0;
-    case 'longtermHabits':
-      return this.gameStats.longtermHabits || 0;
-    case 'completedTasks':
-      return this.gameStats.completedTasks || 0;
-    case 'meditationCount':
-      return this.gameStats.meditationCount || 0;
-    default:
-      return 0;
-  }
+  if (!badge?.progressMetric) return 0;
+  
+  const progressMetrics = {
+    daysActive: this.gameStats.daysActive || 0,
+    currentStreak: this.gameStats.currentStreak,
+    totalXP: this.gameStats.totalXP,
+    earlyTasks: this.gameStats.earlyTasks || 0,
+    nightTasks: this.gameStats.nightTasks || 0,
+    longtermHabits: this.gameStats.longtermHabits || 0,
+    completedTasks: this.gameStats.completedTasks || 0,
+    meditationCount: this.gameStats.meditationCount || 0
+  };
+
+  return progressMetrics[badge.progressMetric] || 0;
 };
 
 // Method to purchase item
 UserSchema.methods.purchaseItem = async function(item, cost) {
+  if (!item || cost === undefined) {
+    throw new Error('Invalid item or cost');
+  }
+
   if (this.coins < cost) {
     throw new Error('Not enough coins');
   }
@@ -290,26 +292,32 @@ UserSchema.methods.purchaseItem = async function(item, cost) {
   this.coins -= cost;
   
   // Add to inventory based on item type
-  if (item.type === 'badge') {
-    this.inventory.badges.push({
-      badge: item._id,
-      unlockedAt: new Date()
-    });
-  } else if (item.type === 'powerup') {
-    const existing = this.inventory.powerups.find(p => p.item.equals(item._id));
-    if (existing) {
-      existing.quantity += 1;
-    } else {
-      this.inventory.powerups.push({
-        item: item._id,
-        quantity: 1,
-        expiresAt: item.duration ? new Date(Date.now() + item.duration * 1000) : null
+  switch(item.type) {
+    case 'badge':
+      this.inventory.badges.push({
+        badge: item._id,
+        unlockedAt: new Date()
       });
-    }
-  } else if (item.type === 'cosmetic') {
-    if (!this.inventory.cosmetics.some(c => c.equals(item._id))) {
-      this.inventory.cosmetics.push(item._id);
-    }
+      break;
+    case 'powerup':
+      const existingPowerup = this.inventory.powerups.find(p => p.item.equals(item._id));
+      if (existingPowerup) {
+        existingPowerup.quantity += 1;
+      } else {
+        this.inventory.powerups.push({
+          item: item._id,
+          quantity: 1,
+          expiresAt: item.duration ? new Date(Date.now() + item.duration * 1000) : null
+        });
+      }
+      break;
+    case 'cosmetic':
+      if (!this.inventory.cosmetics.some(c => c.equals(item._id))) {
+        this.inventory.cosmetics.push(item._id);
+      }
+      break;
+    default:
+      throw new Error('Invalid item type');
   }
 
   await this.save();
