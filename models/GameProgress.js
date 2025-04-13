@@ -7,13 +7,11 @@ const GameProgressSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: [true, 'Progress must belong to a user']
-    // Removed index: true here since we have compound index below
   },
   gameId: {
     type: String,
     required: [true, 'Game ID is required'],
     enum: ['word-scrambler', 'spin-wheel', 'habit-challenge', 'cosmic-chess', 'recovery-game']
-    // Removed index: true here since we have compound index below
   },
 
   // Game State Management
@@ -22,7 +20,7 @@ const GameProgressSchema = new mongoose.Schema({
     required: [true, 'Progress data is required'],
     validate: {
       validator: function(v) {
-        return JSON.stringify(v).length <= 50000; // 50KB max
+        return JSON.stringify(v).length <= 50000;
       },
       message: 'Progress data exceeds maximum size'
     }
@@ -47,7 +45,7 @@ const GameProgressSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  playTime: { // in seconds
+  playTime: {
     type: Number,
     default: 0,
     min: 0
@@ -72,7 +70,7 @@ const GameProgressSchema = new mongoose.Schema({
   sessionHistory: [{
     startTime: Date,
     endTime: Date,
-    duration: Number, // in seconds
+    duration: Number,
     actions: Number,
     xpEarned: Number,
     completed: Boolean
@@ -113,12 +111,12 @@ const GameProgressSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Optimized Indexes
-GameProgressSchema.index({ userId: 1, gameId: 1 }, { unique: true }); // Compound primary key
+// Indexes
+GameProgressSchema.index({ userId: 1, gameId: 1 }, { unique: true });
 GameProgressSchema.index({ 'achievementHistory.achievementId': 1 });
 GameProgressSchema.index({ 'sessionHistory.endTime': -1 });
-GameProgressSchema.index({ xpEarned: -1 }); // For leaderboards
-GameProgressSchema.index({ highestScore: -1 }); // For leaderboards
+GameProgressSchema.index({ xpEarned: -1 });
+GameProgressSchema.index({ highestScore: -1 });
 
 // Virtual Properties
 GameProgressSchema.virtual('totalSessions').get(function() {
@@ -143,7 +141,6 @@ GameProgressSchema.virtual('xpPerHour').get(function() {
 
 // Pre-save hooks
 GameProgressSchema.pre('save', function(next) {
-  // Auto-calculate completion percentage if not set
   if (this.progressData?.levels) {
     const completedLevels = Object.values(this.progressData.levels)
       .filter(level => level.completed).length;
@@ -152,7 +149,6 @@ GameProgressSchema.pre('save', function(next) {
     );
   }
 
-  // Update highest score if applicable
   if (this.progressData?.score > this.highestScore) {
     this.highestScore = this.progressData.score;
   }
@@ -189,10 +185,9 @@ GameProgressSchema.methods.addAchievement = function(achievementId, xpReward = 0
 GameProgressSchema.methods.createCheckpoint = function() {
   this.checkpoints.push({
     level: this.currentLevel,
-    data: JSON.parse(JSON.stringify(this.progressData)) // Deep clone
+    data: JSON.parse(JSON.stringify(this.progressData))
   });
   
-  // Keep only the last 5 checkpoints
   if (this.checkpoints.length > 5) {
     this.checkpoints.shift();
   }
@@ -252,8 +247,7 @@ GameProgressSchema.statics.getLeaderboard = async function(gameId, limit = 10) {
 GameProgressSchema.statics.getGameAnalytics = async function(gameId) {
   return this.aggregate([
     { $match: { gameId } },
-    {
+    { 
       $group: {
         _id: null,
-        totalPlayers: { $sum: 1 },
-        averageXp: { $avg: '$xpEarned
+        totalPlayers
