@@ -1,28 +1,24 @@
 import express from 'express';
 import { 
-  saveLocalData,
-  getLocalData,
-  getAllLocalData,
-  deleteLocalData,
-  syncLocalData
-} from '../controllers/localDataController.js';
+  getLeaderboard, 
+  getUserPosition,
+  getMultipleLeaderboards
+} from '../controllers/leaderboardController.js';
 import { verifyUser } from '../middleware/authMiddleware.js';
-import { validateLocalData } from '../middleware/validationMiddleware.js';
 
 const router = express.Router();
 
-// Apply auth to all routes
-router.use(verifyUser);
-
-// Key-based operations
-router.route('/:key')
-  .post(validateLocalData, saveLocalData)  // Save data for specific key
-  .get(getLocalData)                      // Get data for specific key
-  .delete(deleteLocalData);               // Delete data for specific key
-
-// Bulk operations
+// Public routes (no authentication required)
 router.route('/')
-  .get(getAllLocalData)                   // Get all data for user
-  .post(syncLocalData);                   // Synchronize client-server data
+  .get(getLeaderboard);              // GET: Get main leaderboard (public)
+
+router.route('/multiple')
+  .get(getMultipleLeaderboards);     // GET: Get multiple leaderboards (public)
+
+// Protected routes (require authentication)
+router.use(verifyUser);             // Apply auth middleware to following routes
+
+router.route('/position')
+  .get(getUserPosition);            // GET: Get current user's position (protected)
 
 export default router;
