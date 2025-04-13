@@ -4,16 +4,21 @@ import {
   getUserPosition,
   getMultipleLeaderboards
 } from '../controllers/leaderboardController.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { verifyUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Public routes
-router.get('/', getLeaderboard);
-router.get('/multiple', getMultipleLeaderboards);
+// Public routes (no authentication required)
+router.route('/')
+  .get(getLeaderboard);              // GET: Get main leaderboard (public)
 
-// Protected routes
-router.use(verifyToken);
-router.get('/position', getUserPosition);
+router.route('/multiple')
+  .get(getMultipleLeaderboards);     // GET: Get multiple leaderboards (public)
+
+// Protected routes (require authentication)
+router.use(verifyUser);             // Apply auth middleware to following routes
+
+router.route('/position')
+  .get(getUserPosition);            // GET: Get current user's position (protected)
 
 export default router;
