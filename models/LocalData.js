@@ -2,22 +2,39 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import AppError from '../utils/appError.js';
 
+// Validate encryption key on startup
+if (process.env.NODE_ENV === 'production' && !process.env.DATA_ENCRYPTION_KEY) {
+  throw new Error('DATA_ENCRYPTION_KEY must be set in production environment');
+}
+
 const LocalDataSchema = new mongoose.Schema({
   // Core Identification
   userId: {
     type: String,
     required: [true, 'User ID is required'],
     index: true,
-    trim: true
+    trim: true,
+    validate: {
+      validator: (v) => v.length >= 8 && v.length <= 64,
+      message: 'User ID must be 8-64 characters'
+    }
   },
   deviceId: {
     type: String,
     index: true,
-    trim: true
+    trim: true,
+    validate: {
+      validator: (v) => !v || (v.length >= 8 && v.length <= 64),
+      message: 'Device ID must be 8-64 characters if provided'
+    }
   },
   sessionId: {
     type: String,
-    index: true
+    index: true,
+    validate: {
+      validator: (v) => !v || crypto.randomBytes(8).toString('hex').length === v.length,
+      message: 'Session ID must be 16 hex characters if provided'
+    }
   },
 
   // Data Storage
@@ -25,13 +42,28 @@ const LocalDataSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Data key is required'],
     trim: true,
-    maxlength: [100, 'Key cannot exceed 100 characters']
+    maxlength: [100, 'Key cannot exceed 100 characters'],
+    match: [/^[a-zA-Z0-9_-]+$/, 'Key can only contain alphanumerics, hyphens and underscores']
   },
   value: {
     type: mongoose.Schema.Types.Mixed,
-    required: [true, 'Data value is required']
+    required: [true, 'Data value is required'],
+    validate: {
+      validator: function(v) {
+        try {
+          const str = JSON.stringify(v);
+          return str.length <= 1024 * 1024; // 1MB max
+        } catch (e) {
+          return false;
+        }
+      },
+      message: 'Value must be serializable and cannot exceed 1MB'
+    }
   },
-  valueHash: String,
+  valueHash: {
+    type: String,
+    immutable: true
+  },
   valueType: {
     type: String,
     enum: ['string', 'number', 'boolean', 'object', 'array', 'binary'],
@@ -39,22 +71,27 @@ const LocalDataSchema = new mongoose.Schema({
   },
   valueSize: {
     type: Number, // in bytes
-    min: 0
+    min: 0,
+    max: 1024 * 1024 // 1MB
   },
 
   // Metadata
   namespace: {
     type: String,
     default: 'default',
-    trim: true  // Removed the duplicate index: true here
+    index: true,
+    trim: true,
+    match: [/^[a-z0-9_-]+$/, 'Namespace can only contain lowercase alphanumerics, hyphens and underscores']
   },
   version: {
     type: Number,
-    default: 1
+    default: 1,
+    min: 1
   },
   tags: [{
     type: String,
-    maxlength: [30, 'Tags cannot exceed 30 characters']
+    maxlength: [30, 'Tags cannot exceed 30 characters'],
+    match: [/^[a-z0-9-]+$/, 'Tags can only contain lowercase alphanumerics and hyphens']
   }],
 
   // Security
@@ -65,12 +102,16 @@ const LocalDataSchema = new mongoose.Schema({
     },
     algorithm: {
       type: String,
-      enum: ['aes-256-cbc', 'aes-128-cbc', null],
-      default: null
+      enum: ['aes-256-cbc', 'aes-128-cbc'],
+      default: 'aes-256-cbc'
     },
     iv: {
       type: String,
       select: false
+    },
+    keyVersion: {
+      type: Number,
+      default: 1
     }
   },
 
@@ -78,7 +119,7 @@ const LocalDataSchema = new mongoose.Schema({
   ttl: {
     type: Date,
     index: true,
-    expires: 0 // Automatically removes docs when ttl is reached
+    expires: 0 // Automatic TTL
   },
   lastAccessed: {
     type: Date,
@@ -95,12 +136,17 @@ const LocalDataSchema = new mongoose.Schema({
   syncStatus: {
     type: String,
     enum: ['pending', 'synced', 'conflict', 'local-only'],
-    default: 'synced'
+    default: 'synced',
+    index: true
   },
-  lastSynced: Date,
+  lastSynced: {
+    type: Date,
+    index: true
+  },
   syncVersion: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   origin: {
     type: String,
@@ -109,18 +155,30 @@ const LocalDataSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toJSON: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      // Hide sensitive fields
+      delete ret.encryption;
+      delete ret.valueHash;
+      return ret;
+    }
+  },
+  toObject: { 
+    virtuals: true,
+    transform: function(doc, ret) {
+      delete ret.encryption;
+      delete ret.valueHash;
+      return ret;
+    }
+  }
 });
 
-// Indexes for optimized queries
+// Compound Indexes
+LocalDataSchema.index({ userId: 1, namespace: 1 });
 LocalDataSchema.index({ userId: 1, key: 1 }, { unique: true });
-LocalDataSchema.index({ syncStatus: 1 });
-LocalDataSchema.index({ lastAccessed: -1 });
-LocalDataSchema.index({ updatedAt: -1 });
-
-// Removed the duplicate namespace index that was here:
-// LocalDataSchema.index({ namespace: 1 });
+LocalDataSchema.index({ namespace: 1, tags: 1 });
+LocalDataSchema.index({ syncStatus: 1, lastSynced: -1 });
 
 // Virtual Properties
 LocalDataSchema.virtual('isExpired').get(function() {
@@ -135,70 +193,100 @@ LocalDataSchema.virtual('ageInHours').get(function() {
   return Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60));
 });
 
+LocalDataSchema.virtual('needsSync').get(function() {
+  return this.syncStatus === 'pending' || 
+         (this.syncStatus === 'synced' && 
+          this.updatedAt > this.lastSynced);
+});
+
 // Pre-save hooks
 LocalDataSchema.pre('save', function(next) {
   // Auto-detect value type
   this.valueType = Array.isArray(this.value) ? 'array' : typeof this.value;
   
   // Calculate value size
-  this.valueSize = Buffer.byteLength(JSON.stringify(this.value), 'utf8');
-  
+  try {
+    this.valueSize = Buffer.byteLength(JSON.stringify(this.value), 'utf8');
+  } catch (e) {
+    throw new AppError('Invalid data value: cannot calculate size', 400);
+  }
+
   // Generate content hash
   this.valueHash = crypto.createHash('sha256')
     .update(JSON.stringify(this.value))
     .digest('hex');
   
-  // Handle encryption
-  if (this.encryption.enabled && !this.isModified('value')) {
+  // Handle encryption if enabled
+  if (this.encryption.enabled && this.isModified('value')) {
     this.encryptValue();
   }
-  
+
+  // Update sync timestamp if modified
+  if (this.isModified('value') || this.isModified('encryption')) {
+    this.syncStatus = 'pending';
+  }
+
   next();
 });
 
 // Instance Methods
 LocalDataSchema.methods.encryptValue = function() {
-  if (!this.encryption.enabled) return this;
-  
-  const algorithm = this.encryption.algorithm || 'aes-256-cbc';
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(
-    algorithm, 
-    process.env.DATA_ENCRYPTION_KEY, 
-    iv
-  );
-  
-  this.value = Buffer.concat([
-    cipher.update(JSON.stringify(this.value)),
-    cipher.final()
-  ]).toString('hex');
-  
-  this.encryption.iv = iv.toString('hex');
-  return this;
+  if (!this.encryption.enabled || !process.env.DATA_ENCRYPTION_KEY) {
+    return this;
+  }
+
+  try {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(
+      this.encryption.algorithm, 
+      process.env.DATA_ENCRYPTION_KEY, 
+      iv
+    );
+    
+    this.value = Buffer.concat([
+      cipher.update(JSON.stringify(this.value)),
+      cipher.final()
+    ]).toString('hex');
+    
+    this.encryption.iv = iv.toString('hex');
+    return this;
+  } catch (err) {
+    throw new AppError(`Encryption failed: ${err.message}`, 500);
+  }
 };
 
 LocalDataSchema.methods.decryptValue = function() {
-  if (!this.isEncrypted) return this.value;
-  
-  const decipher = crypto.createDecipheriv(
-    this.encryption.algorithm,
-    process.env.DATA_ENCRYPTION_KEY,
-    Buffer.from(this.encryption.iv, 'hex')
-  );
-  
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(this.value, 'hex')),
-    decipher.final()
-  ]);
-  
-  return JSON.parse(decrypted.toString());
+  if (!this.isEncrypted || !this.encryption.iv) {
+    return this.value;
+  }
+
+  try {
+    const decipher = crypto.createDecipheriv(
+      this.encryption.algorithm,
+      process.env.DATA_ENCRYPTION_KEY,
+      Buffer.from(this.encryption.iv, 'hex')
+    );
+    
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(this.value, 'hex')),
+      decipher.final()
+    ]);
+    
+    return JSON.parse(decrypted.toString());
+  } catch (err) {
+    throw new AppError(`Decryption failed: ${err.message}`, 500);
+  }
 };
 
 LocalDataSchema.methods.setTTL = function(days = 30) {
-  const ttlDate = new Date();
-  ttlDate.setDate(ttlDate.getDate() + days);
-  this.ttl = ttlDate;
+  this.ttl = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   return this;
+};
+
+LocalDataSchema.methods.touch = function() {
+  this.lastAccessed = new Date();
+  this.accessCount += 1;
+  return this.save();
 };
 
 // Static Methods
@@ -230,6 +318,7 @@ LocalDataSchema.statics.syncUserData = async function(userId, clientData) {
   try {
     const serverData = await this.find({ userId }).session(session);
     const operations = [];
+    const now = new Date();
     
     // Process client data
     for (const item of clientData) {
@@ -237,14 +326,18 @@ LocalDataSchema.statics.syncUserData = async function(userId, clientData) {
       
       if (existing) {
         // Conflict resolution (client wins if newer)
-        if (new Date(item.updatedAt) > existing.updatedAt) {
+        const clientModified = new Date(item.updatedAt);
+        const serverModified = existing.updatedAt;
+        
+        if (clientModified > serverModified) {
           operations.push(
             this.updateOne(
               { _id: existing._id },
               { 
                 value: item.value,
                 syncStatus: 'synced',
-                syncVersion: existing.syncVersion + 1
+                syncVersion: existing.syncVersion + 1,
+                lastSynced: now
               }
             ).session(session)
           );
@@ -257,7 +350,8 @@ LocalDataSchema.statics.syncUserData = async function(userId, clientData) {
             key: item.key,
             value: item.value,
             origin: 'client',
-            syncStatus: 'synced'
+            syncStatus: 'synced',
+            lastSynced: now
           }], { session })
         );
       }
@@ -266,10 +360,45 @@ LocalDataSchema.statics.syncUserData = async function(userId, clientData) {
     await Promise.all(operations);
     await session.commitTransaction();
     
-    return this.find({ userId }).session(session);
+    return this.find({ userId })
+      .session(session)
+      .lean();
   } catch (err) {
     await session.abortTransaction();
-    throw err;
+    throw new AppError(`Sync failed: ${err.message}`, 500);
+  } finally {
+    session.endSession();
+  }
+};
+
+LocalDataSchema.statics.rotateEncryptionKey = async function(newKey) {
+  if (!newKey) {
+    throw new AppError('New encryption key must be provided', 400);
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    // Get all encrypted documents
+    const encryptedDocs = await this.find({ 
+      'encryption.enabled': true 
+    }).session(session);
+
+    // Re-encrypt with new key
+    for (const doc of encryptedDocs) {
+      const decryptedValue = doc.decryptValue();
+      doc.value = decryptedValue;
+      doc.encryption.keyVersion += 1;
+      process.env.DATA_ENCRYPTION_KEY = newKey;
+      await doc.save({ session });
+    }
+
+    await session.commitTransaction();
+    return { success: true, count: encryptedDocs.length };
+  } catch (err) {
+    await session.abortTransaction();
+    throw new AppError(`Key rotation failed: ${err.message}`, 500);
   } finally {
     session.endSession();
   }
