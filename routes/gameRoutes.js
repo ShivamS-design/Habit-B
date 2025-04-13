@@ -4,17 +4,19 @@ import {
   getGameProgress,
   getGameAnalytics
 } from '../controllers/gameController.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { verifyUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Save game progress
-router.post('/', verifyToken, saveGameProgress);
+// Game progress routes
+router.route('/')
+  .post(verifyUser, saveGameProgress);  // Save game progress (protected)
 
-// Get game progress
-router.get('/:gameId', verifyToken, getGameProgress);
+router.route('/:gameId')
+  .get(verifyUser, getGameProgress);    // Get specific game progress (protected)
 
-// Get game analytics
-router.get('/analytics/summary', verifyToken, getGameAnalytics);
+// Game analytics route
+router.route('/analytics/summary')
+  .get(verifyUser, getGameAnalytics);   // Get game analytics summary (protected)
 
 export default router;
