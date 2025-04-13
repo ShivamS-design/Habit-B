@@ -128,16 +128,30 @@ InventoryItemSchema.virtual('isBoost').get(function() {
   return this.itemType === 'boost';
 });
 
+InventoryItemSchema.virtual('expiresAt').get(function() {
+  return this.effects?.duration 
+    ? new Date(Date.now() + this.effects.duration * 60 * 60 * 1000)
+    : null;
+});
+
 // Pre-save hooks
 InventoryItemSchema.pre('save', function(next) {
-  // Auto-set category based on item type
+  // Auto-set category based on item type if not specified
   if (!this.category || this.category === 'other') {
     if (this.itemType === 'boost') {
       this.category = 'xp_boost';
     } else if (this.itemType === 'powerup') {
       this.category = 'streak_protection';
+    } else if (this.itemType === 'cosmetic') {
+      this.category = 'theme';
     }
   }
+
+  // Validate boost items have multiplier
+  if (this.itemType === 'boost' && !this.effects?.xpMultiplier) {
+    throw new AppError('Boost items must have an XP multiplier', 400);
+  }
+  
   next();
 });
 
@@ -146,6 +160,14 @@ InventoryItemSchema.statics.getByType = async function(itemType, limit = 20) {
   return this.find({ itemType, isActive: true })
     .limit(limit)
     .sort('-rarity -createdAt');
+};
+
+InventoryItemSchema.statics.getActiveBoosts = async function() {
+  return this.find({ 
+    itemType: 'boost',
+    isActive: true,
+    'effects.xpMultiplier': { $exists: true }
+  });
 };
 
 // Instance Methods
@@ -164,7 +186,28 @@ InventoryItemSchema.methods.applyEffect = async function(userId) {
     });
   }
   
-  // Add other effect types as needed
+  if (this.itemType === 'powerup' && this.effects.streakProtection) {
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        'gameStats.streakProtection': {
+          itemId: this._id,
+          expiresAt: new Date(Date.now() + this.effects.duration * 60 * 60 * 1000)
+        }
+      }
+    });
+  }
+  
+  return this;
+};
+
+InventoryItemSchema.methods.toInventoryObject = function() {
+  return {
+    item: this._id,
+    quantity: 1,
+    expiresAt: this.effects?.duration 
+      ? new Date(Date.now() + this.effects.duration * 60 * 60 * 1000)
+      : null
+  };
 };
 
 const InventoryItem = mongoose.model('InventoryItem', InventoryItemSchema);
