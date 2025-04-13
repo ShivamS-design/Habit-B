@@ -33,26 +33,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // Constants
-const PORT = process.env.PORT || 3000; // Changed to 3000 to match client
+const PORT = process.env.PORT || 5000; // Server port
 const MONGODB_URI = process.env.MONGODB_URI;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000'; // Ensure http:// prefix
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000'; // Frontend port
+const RAILWAY_PUBLIC_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN;
 
 // Database Connection
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      useCreateIndex: true,
+      useFindAndModify: false
     });
     console.log('MongoDB connected successfully');
     
-    // Initialize models to ensure indexes (removed manual index creation)
-    await Promise.all([
-      mongoose.model('User').init(),
-      mongoose.model('GameProgress').init()
-    ]);
-    
+    // Remove the manual index creation to avoid duplicates
+    // Indexes should be defined in the schemas only
   } catch (err) {
     console.error('MongoDB connection error:', err);
     process.exit(1);
@@ -67,7 +66,7 @@ app.use(mongoSanitize());
 app.use(hpp());
 app.use(cookieParser());
 
-// Rate limiting
+// Rate limiting (now using centralized config)
 app.use('/api', apiLimiter);
 
 // Body parser
@@ -77,12 +76,27 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Enhanced CORS configuration
+// CORS - Updated configuration
+const allowedOrigins = [
+  CLIENT_URL,
+  RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : null,
+  RAILWAY_PUBLIC_DOMAIN ? `http://${RAILWAY_PUBLIC_DOMAIN}` : null
+].filter(Boolean);
+
 app.use(cors({
-  origin: CLIENT_URL,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Logging
@@ -99,7 +113,8 @@ app.get('/', (req, res) => {
     environment: NODE_ENV,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    clientUrl: CLIENT_URL
+    clientUrl: CLIENT_URL,
+    railwayDomain: RAILWAY_PUBLIC_DOMAIN
   });
 });
 
@@ -130,7 +145,7 @@ app.use(errorHandler);
 // ======================
 // SERVER STARTUP
 // ======================
-let server;
+let server; // Define server variable for graceful shutdown
 
 const startServer = async () => {
   await connectDB();
@@ -139,8 +154,12 @@ const startServer = async () => {
     console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
     console.log(`Client URL: ${CLIENT_URL}`);
     console.log(`API base URL: http://localhost:${PORT}/api/v1`);
+    if (RAILWAY_PUBLIC_DOMAIN) {
+      console.log(`Railway Public Domain: ${RAILWAY_PUBLIC_DOMAIN}`);
+    }
   });
 
+  // Handle server errors
   server.on('error', (err) => {
     console.error('Server error:', err);
     process.exit(1);
@@ -160,6 +179,7 @@ process.on('uncaughtException', (err) => {
   server?.close(() => process.exit(1));
 });
 
+// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
   server?.close(() => {
