@@ -33,22 +33,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // Constants
-const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://standardg0ku31@cluster0.tls8oxo.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const PORT = process.env.PORT || 3000; // Changed to 3000 to match client
+const MONGODB_URI = process.env.MONGODB_URI;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
-const JWT_SECRET = process.env.JWT_SECRET || 'yoEPQfVN9qQGubqn';
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000'; // Ensure http:// prefix
 
 // Database Connection
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,  // 5s timeout
-      socketTimeoutMS: 45000           // 45s socket timeout
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000
     });
     console.log('MongoDB connected successfully');
     
-    // Automatic index creation
+    // Initialize models to ensure indexes (removed manual index creation)
     await Promise.all([
       mongoose.model('User').init(),
       mongoose.model('GameProgress').init()
@@ -78,12 +77,12 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Enhanced CORS
+// Enhanced CORS configuration
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Logging
@@ -100,8 +99,7 @@ app.get('/', (req, res) => {
     environment: NODE_ENV,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    clientUrl: CLIENT_URL,
-    apiBaseUrl: `http://localhost:${PORT}/api/v1`
+    clientUrl: CLIENT_URL
   });
 });
 
@@ -132,7 +130,7 @@ app.use(errorHandler);
 // ======================
 // SERVER STARTUP
 // ======================
-let server; // For graceful shutdown
+let server;
 
 const startServer = async () => {
   await connectDB();
