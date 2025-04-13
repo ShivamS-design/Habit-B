@@ -6,9 +6,15 @@ import { promisify } from 'util';
 // Promisify jwt.verify
 const verifyToken = promisify(jwt.verify);
 
+/**
+ * @desc    Verify JWT and protect routes
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const verifyUser = async (req, res, next) => {
   try {
-    // 1. Get token from headers/cookies
+    // 1. Get token from headers or cookies
     let token;
     if (
       req.headers.authorization &&
@@ -37,10 +43,9 @@ export const verifyUser = async (req, res, next) => {
       return next(new AppError('Password changed recently. Please log in again', 401));
     }
 
-    // 5. Attach user to request
+    // 5. Grant access to protected route
     req.user = currentUser;
     res.locals.user = currentUser; // For templates if needed
-    
     next();
   } catch (error) {
     // Handle specific JWT errors
@@ -54,6 +59,11 @@ export const verifyUser = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Restrict access to specific roles
+ * @param   {...String} roles - Allowed user roles
+ * @return  {Function} Middleware function
+ */
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
@@ -65,6 +75,9 @@ export const restrictTo = (...roles) => {
   };
 };
 
+/**
+ * @desc    Optional authentication for non-critical routes
+ */
 export const verifyOptional = async (req, res, next) => {
   try {
     let token;
@@ -91,34 +104,12 @@ export const verifyOptional = async (req, res, next) => {
   }
 };
 
-// For Firebase Auth integration
-export const verifyFirebaseToken = async (req, res, next) => {
-  try {
-    const idToken = req.headers.authorization?.split('Bearer ')[1];
-    if (!idToken) {
-      return next(new AppError('No Firebase token provided', 401));
-    }
+// Named exports
+export { verifyUser, restrictTo, verifyOptional };
 
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const firebaseUid = decodedToken.uid;
-
-    const user = await User.findOne({ firebaseUid });
-    if (!user) {
-      return next(new AppError('No user found for this Firebase account', 404));
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    next(new AppError('Invalid Firebase token', 401));
-  }
-};
-
-// For API key authentication
-export const verifyApiKey = (req, res, next) => {
-  const apiKey = req.headers['x-api-key'];
-  if (!apiKey || apiKey !== process.env.API_KEY) {
-    return next(new AppError('Invalid API key', 401));
-  }
-  next();
+// Default export
+export default {
+  verifyUser,
+  restrictTo,
+  verifyOptional
 };
