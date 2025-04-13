@@ -6,7 +6,6 @@ import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import morgan from 'morgan';
@@ -25,23 +24,13 @@ import statsRoutes from './routes/statsRoutes.js';
 
 // Middleware
 import { verifyUser } from './middleware/authMiddleware.js';
+import errorHandler from './middleware/errorMiddleware.js';
+import { apiLimiter } from './middleware/rateLimiter.js';
 
 // Initialize app
 dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-
-// =============================================
-// ADDED: Fallback error handler if errorMiddleware.js is missing
-const errorHandler = (err, req, res, next) => {
-  console.error('Error:', err.stack);
-  res.status(500).json({
-    status: 'error',
-    message: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-};
-// =============================================
 
 // Constants
 const PORT = process.env.PORT || 5000;
@@ -49,7 +38,7 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
-// Database Connection (unchanged)
+// Database Connection
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
@@ -60,6 +49,7 @@ const connectDB = async () => {
     });
     console.log('MongoDB connected successfully');
     
+    // Create indexes
     await mongoose.connection.db.collection('users').createIndex({ email: 1 }, { unique: true });
     await mongoose.connection.db.collection('gameprogress').createIndex({ userId: 1, gameId: 1 }, { unique: true });
     
@@ -69,40 +59,39 @@ const connectDB = async () => {
   }
 };
 
-// Security Middleware (unchanged)
+// ======================
+// SECURITY MIDDLEWARE
+// ======================
 app.use(helmet());
 app.use(mongoSanitize());
 app.use(hpp());
 app.use(cookieParser());
 
-// Rate limiting (unchanged)
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  message: 'Too many requests from this IP, please try again later'
-});
-app.use('/api', limiter);
+// Rate limiting (now using centralized config)
+app.use('/api', apiLimiter);
 
-// Body parser (unchanged)
+// Body parser
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Static files (unchanged)
+// Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// CORS (unchanged)
+// CORS
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 }));
 
-// Logging (unchanged)
+// Logging
 if (NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Health check (unchanged)
+// ======================
+// ROUTES
+// ======================
 app.get('/', (req, res) => {
   res.json({
     status: 'running',
@@ -112,7 +101,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// API Routes (unchanged)
+// API Routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', verifyUser, userRoutes);
 app.use('/api/v1/habits', verifyUser, habitRoutes);
@@ -124,33 +113,37 @@ app.use('/api/v1/local-storage', verifyUser, localStorageRoutes);
 app.use('/api/v1/badges', verifyUser, badgeRoutes);
 app.use('/api/v1/stats', verifyUser, statsRoutes);
 
-// =============================================
-// IMPROVED: 404 Handler with route debugging
+// ======================
+// ERROR HANDLING
+// ======================
 app.all('*', (req, res, next) => {
   const err = new Error(`Route ${req.originalUrl} not found`);
   err.statusCode = 404;
   err.isOperational = true;
-  
-  if (process.env.NODE_ENV === 'development') {
-    console.warn(`Missing route: ${req.method} ${req.originalUrl}`);
-  }
-  
   next(err);
 });
-// =============================================
 
-// Error handling middleware (now uses our fallback)
 app.use(errorHandler);
 
-// Server startup (unchanged)
+// ======================
+// SERVER STARTUP
+// ======================
 const startServer = async () => {
   await connectDB();
-  app.listen(PORT, () => {
+  
+  const server = app.listen(PORT, () => {
     console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
+    console.log(`API docs available at http://localhost:${PORT}/api-docs`);
+  });
+
+  // Handle server errors
+  server.on('error', (err) => {
+    console.error('Server error:', err);
+    process.exit(1);
   });
 };
 
-// Error handlers (unchanged)
+// Process event handlers
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection! Shutting down...');
   console.error(err.name, err.message);
@@ -161,6 +154,14 @@ process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception! Shutting down...');
   console.error(err.name, err.message);
   process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down gracefully...');
+  server.close(() => {
+    console.log('Process terminated');
+  });
 });
 
 startServer();
