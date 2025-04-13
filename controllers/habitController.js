@@ -224,12 +224,12 @@ export const getHabitAnalytics = async (req, res, next) => {
       totalHabits: habits.length,
       activeHabits: habits.filter(h => h.isActive).length,
       totalCompletions: habits.reduce((sum, h) => sum + h.completionHistory.length, 0),
-      bestStreak: Math.max(...habits.map(h => h.longestStreak),
+      bestStreak: Math.max(...habits.map(h => h.longestStreak)), // Added missing parenthesis
       currentStreaks: habits.map(h => ({
         name: h.name,
         streak: h.currentStreak,
         status: h.streakStatus
-      })),
+      })), // Added missing comma
       completionRateByDifficulty: {
         easy: calculateAverageCompletion(habits.filter(h => h.difficulty === 'easy')),
         medium: calculateAverageCompletion(habits.filter(h => h.difficulty === 'medium')),
