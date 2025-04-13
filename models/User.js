@@ -307,9 +307,7 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
-// Indexes
-UserSchema.index({ email: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
-UserSchema.index({ firebaseUid: 1 }, { unique: true, sparse: true });
+// Indexes (removed duplicates that were already defined in schema fields)
 UserSchema.index({ 'gameStats.totalXP': -1 }); // Leaderboard
 UserSchema.index({ 'gameStats.currentStreak': -1 });
 UserSchema.index({ 'inventory.badges.badge': 1 });
