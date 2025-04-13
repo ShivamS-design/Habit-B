@@ -34,25 +34,25 @@ const app = express();
 
 // Constants
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://verceluser:Rocky101@ac-wrzr0fs-shard-00-00.amyt1wr.mongodb.net:27017,ac-wrzr0fs-shard-00-01.amyt1wr.mongodb.net:27017,ac-wrzr0fs-shard-00-02.amyt1wr.mongodb.net:27017/?replicaSet=atlas-8vqnpg-shard-0&ssl=true&authSource=admin&retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://standardg0ku31@cluster0.tls8oxo.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+const JWT_SECRET = process.env.JWT_SECRET || 'yoEPQfVN9qQGubqn';
 
 // Database Connection
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,  // 5 seconds timeout
-      socketTimeoutMS: 45000,          // 45 seconds socket timeout
+      serverSelectionTimeoutMS: 5000,  // 5s timeout
+      socketTimeoutMS: 45000           // 45s socket timeout
     });
     console.log('MongoDB connected successfully');
     
-    // Create indexes (using modern approach)
-    const userModel = mongoose.model('User');
-    const gameProgressModel = mongoose.model('GameProgress');
-    
-    await userModel.init(); // This will create all User schema indexes
-    await gameProgressModel.init(); // This will create all GameProgress schema indexes
+    // Automatic index creation
+    await Promise.all([
+      mongoose.model('User').init(),
+      mongoose.model('GameProgress').init()
+    ]);
     
   } catch (err) {
     console.error('MongoDB connection error:', err);
@@ -78,11 +78,12 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// CORS
+// Enhanced CORS
 app.use(cors({
   origin: CLIENT_URL,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Logging
@@ -98,7 +99,9 @@ app.get('/', (req, res) => {
     status: 'running',
     environment: NODE_ENV,
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    clientUrl: CLIENT_URL,
+    apiBaseUrl: `http://localhost:${PORT}/api/v1`
   });
 });
 
@@ -129,7 +132,7 @@ app.use(errorHandler);
 // ======================
 // SERVER STARTUP
 // ======================
-let server; // Declare server variable for graceful shutdown
+let server; // For graceful shutdown
 
 const startServer = async () => {
   await connectDB();
@@ -137,9 +140,9 @@ const startServer = async () => {
   server = app.listen(PORT, () => {
     console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
     console.log(`Client URL: ${CLIENT_URL}`);
+    console.log(`API base URL: http://localhost:${PORT}/api/v1`);
   });
 
-  // Handle server errors
   server.on('error', (err) => {
     console.error('Server error:', err);
     process.exit(1);
@@ -150,32 +153,21 @@ const startServer = async () => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection! Shutting down...');
   console.error(err.name, err.message);
-  if (server) {
-    server.close(() => process.exit(1));
-  } else {
-    process.exit(1);
-  }
+  server?.close(() => process.exit(1));
 });
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception! Shutting down...');
   console.error(err.name, err.message);
-  if (server) {
-    server.close(() => process.exit(1));
-  } else {
-    process.exit(1);
-  }
+  server?.close(() => process.exit(1));
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
-  if (server) {
-    server.close(() => {
-      console.log('Process terminated');
-      process.exit(0);
-    });
-  }
+  server?.close(() => {
+    console.log('Process terminated');
+    process.exit(0);
+  });
 });
 
 startServer();
