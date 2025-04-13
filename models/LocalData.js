@@ -46,8 +46,7 @@ const LocalDataSchema = new mongoose.Schema({
   namespace: {
     type: String,
     default: 'default',
-    index: true,
-    trim: true
+    trim: true  // Removed the duplicate index: true here
   },
   version: {
     type: Number,
@@ -116,10 +115,12 @@ const LocalDataSchema = new mongoose.Schema({
 
 // Indexes for optimized queries
 LocalDataSchema.index({ userId: 1, key: 1 }, { unique: true });
-LocalDataSchema.index({ namespace: 1 });
 LocalDataSchema.index({ syncStatus: 1 });
 LocalDataSchema.index({ lastAccessed: -1 });
 LocalDataSchema.index({ updatedAt: -1 });
+
+// Removed the duplicate namespace index that was here:
+// LocalDataSchema.index({ namespace: 1 });
 
 // Virtual Properties
 LocalDataSchema.virtual('isExpired').get(function() {
