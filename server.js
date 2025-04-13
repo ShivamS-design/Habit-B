@@ -34,7 +34,7 @@ const app = express();
 
 // Constants
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://verceluser:Rocky101@ac-wrzr0fs-shard-00-00.amyt1wr.mongodb.net:27017,ac-wrzr0fs-shard-00-01.amyt1wr.mongodb.net:27017,ac-wrzr0fs-shard-00-02.amyt1wr.mongodb.net:27017/?replicaSet=atlas-8vqnpg-shard-0&ssl=true&authSource=admin&retryWrites=true&w=majority&appName=Cluster0';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 
@@ -42,16 +42,17 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      useCreateIndex: true,
-      useFindAndModify: false
+      serverSelectionTimeoutMS: 5000,  // 5 seconds timeout
+      socketTimeoutMS: 45000,          // 45 seconds socket timeout
     });
     console.log('MongoDB connected successfully');
     
-    // Create indexes
-    await mongoose.connection.db.collection('users').createIndex({ email: 1 }, { unique: true });
-    await mongoose.connection.db.collection('gameprogress').createIndex({ userId: 1, gameId: 1 }, { unique: true });
+    // Create indexes (using modern approach)
+    const userModel = mongoose.model('User');
+    const gameProgressModel = mongoose.model('GameProgress');
+    
+    await userModel.init(); // This will create all User schema indexes
+    await gameProgressModel.init(); // This will create all GameProgress schema indexes
     
   } catch (err) {
     console.error('MongoDB connection error:', err);
@@ -67,7 +68,7 @@ app.use(mongoSanitize());
 app.use(hpp());
 app.use(cookieParser());
 
-// Rate limiting (now using centralized config)
+// Rate limiting
 app.use('/api', apiLimiter);
 
 // Body parser
@@ -128,12 +129,14 @@ app.use(errorHandler);
 // ======================
 // SERVER STARTUP
 // ======================
+let server; // Declare server variable for graceful shutdown
+
 const startServer = async () => {
   await connectDB();
   
-  const server = app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
-    console.log(`API docs available at http://localhost:${PORT}/api-docs`);
+    console.log(`Client URL: ${CLIENT_URL}`);
   });
 
   // Handle server errors
@@ -147,21 +150,32 @@ const startServer = async () => {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection! Shutting down...');
   console.error(err.name, err.message);
-  process.exit(1);
+  if (server) {
+    server.close(() => process.exit(1));
+  } else {
+    process.exit(1);
+  }
 });
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception! Shutting down...');
   console.error(err.name, err.message);
-  process.exit(1);
+  if (server) {
+    server.close(() => process.exit(1));
+  } else {
+    process.exit(1);
+  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Process terminated');
-  });
+  if (server) {
+    server.close(() => {
+      console.log('Process terminated');
+      process.exit(0);
+    });
+  }
 });
 
 startServer();
