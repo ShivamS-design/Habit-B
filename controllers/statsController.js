@@ -4,19 +4,20 @@ import AppError from '../utils/appError.js';
 
 /**
  * @desc    Get comprehensive user stats
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const getUserStats = async (req, res, next) => {
   try {
     const stats = await User.findById(req.user.id)
-      .select('xp level gameStats achievements')
-      .populate('gameStats.badges achievements.badge');
-      
+      .select('name avatar xp level coins gameStats inventory')
+      .populate('gameStats.badges inventory.badges.badge');
+    
     res.status(200).json({
       status: 'success',
-      data: stats
+      data: {
+        ...stats.toObject(),
+        xpProgress: stats.xpProgress,
+        nextLevelXP: stats.nextLevelXP
+      }
     });
   } catch (err) {
     next(err);
@@ -25,25 +26,23 @@ export const getUserStats = async (req, res, next) => {
 
 /**
  * @desc    Update user stats
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const updateUserStats = async (req, res, next) => {
   try {
-    const updates = {};
-    
-    // Validate and structure updates
-    if (req.body.xp) updates.$inc = { xp: req.body.xp };
-    if (req.body.level) updates.$set = { level: req.body.level };
-    if (req.body.gameStats) updates.$set = { ...updates.$set, gameStats: req.body.gameStats };
-    
+    const allowedUpdates = ['xp', 'level', 'coins', 'gameStats'];
+    const updates = Object.keys(req.body)
+      .filter(key => allowedUpdates.includes(key))
+      .reduce((obj, key) => {
+        obj[key] = req.body[key];
+        return obj;
+      }, {});
+
     const user = await User.findByIdAndUpdate(
       req.user.id,
       updates,
       { new: true, runValidators: true }
     );
-    
+
     res.status(200).json({
       status: 'success',
       data: user
@@ -55,21 +54,21 @@ export const updateUserStats = async (req, res, next) => {
 
 /**
  * @desc    Get game session statistics
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const getGameSessionStats = async (req, res, next) => {
   try {
     const stats = await GameProgress.findOne({
       userId: req.user.id,
       gameId: req.params.gameId
-    }).lean();
-    
+    });
+
     if (!stats) {
-      return next(new AppError('No game progress found', 404));
+      return res.status(200).json({
+        status: 'success',
+        data: null
+      });
     }
-    
+
     res.status(200).json({
       status: 'success',
       data: stats
@@ -81,18 +80,15 @@ export const getGameSessionStats = async (req, res, next) => {
 
 /**
  * @desc    Get leaderboard statistics
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const getLeaderboardStats = async (req, res, next) => {
   try {
     const leaderboard = await User.find()
-      .sort({ xp: -1, level: -1 })
+      .sort({ 'gameStats.totalXP': -1, level: -1 })
       .limit(100)
-      .select('username avatar xp level gameStats.totalWins')
+      .select('name avatar level gameStats.totalXP')
       .lean();
-    
+
     res.status(200).json({
       status: 'success',
       data: leaderboard
@@ -104,21 +100,20 @@ export const getLeaderboardStats = async (req, res, next) => {
 
 /**
  * @desc    Get user progress toward goals
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const getUserProgress = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id)
-      .select('gameStats.goals achievements')
+      .select('gameStats')
       .lean();
-    
+
     res.status(200).json({
       status: 'success',
       data: {
-        goals: user.gameStats?.goals || [],
-        achievements: user.achievements || []
+        currentStreak: user.gameStats.currentStreak,
+        longestStreak: user.gameStats.longestStreak,
+        totalXP: user.gameStats.totalXP,
+        badgesCount: user.gameStats.badges?.length || 0
       }
     });
   } catch (err) {
@@ -128,19 +123,26 @@ export const getUserProgress = async (req, res, next) => {
 
 /**
  * @desc    Get user activity history
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const getActivityHistory = async (req, res, next) => {
   try {
+    // Using gameStats.gamesPlayed as activity log
     const user = await User.findById(req.user.id)
-      .select('activityLog')
+      .select('gameStats.gamesPlayed')
       .lean();
-    
+
+    const activities = Object.entries(user.gameStats.gamesPlayed || {})
+      .map(([gameId, stats]) => ({
+        type: 'game',
+        gameId,
+        lastPlayed: stats.lastPlayed,
+        playCount: stats.playCount
+      }))
+      .sort((a, b) => b.lastPlayed - a.lastPlayed);
+
     res.status(200).json({
       status: 'success',
-      data: user.activityLog || []
+      data: activities
     });
   } catch (err) {
     next(err);
@@ -149,20 +151,27 @@ export const getActivityHistory = async (req, res, next) => {
 
 /**
  * @desc    Get milestone achievements
- * @param   {Object} req - Express request object
- * @param   {Object} res - Express response object
- * @param   {Function} next - Express next middleware
  */
 export const getMilestoneAchievements = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id)
-      .select('achievements')
-      .populate('achievements.badge')
+      .select('gameStats inventory.badges')
+      .populate('inventory.badges.badge')
       .lean();
-    
+
+    const milestones = user.inventory.badges
+      .filter(badge => 
+        badge.badge?.rarity === 'epic' || 
+        badge.badge?.rarity === 'legendary'
+      )
+      .map(badge => ({
+        badge: badge.badge,
+        unlockedAt: badge.unlockedAt
+      }));
+
     res.status(200).json({
       status: 'success',
-      data: user.achievements?.filter(a => a.isMilestone) || []
+      data: milestones
     });
   } catch (err) {
     next(err);
