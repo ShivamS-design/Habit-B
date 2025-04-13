@@ -2,11 +2,6 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import AppError from '../utils/appError.js';
 
-// Validate encryption key on startup
-if (process.env.NODE_ENV === 'production' && !process.env.DATA_ENCRYPTION_KEY) {
-  throw new Error('DATA_ENCRYPTION_KEY must be set in production environment');
-}
-
 const LocalDataSchema = new mongoose.Schema({
   // Core Identification
   userId: {
@@ -217,7 +212,7 @@ LocalDataSchema.pre('save', function(next) {
     .digest('hex');
   
   // Handle encryption if enabled
-  if (this.encryption.enabled && this.isModified('value')) {
+  if (this.encryption.enabled && this.isModified('value') && process.env.DATA_ENCRYPTION_KEY) {
     this.encryptValue();
   }
 
@@ -256,7 +251,7 @@ LocalDataSchema.methods.encryptValue = function() {
 };
 
 LocalDataSchema.methods.decryptValue = function() {
-  if (!this.isEncrypted || !this.encryption.iv) {
+  if (!this.isEncrypted || !this.encryption.iv || !process.env.DATA_ENCRYPTION_KEY) {
     return this.value;
   }
 
@@ -366,39 +361,6 @@ LocalDataSchema.statics.syncUserData = async function(userId, clientData) {
   } catch (err) {
     await session.abortTransaction();
     throw new AppError(`Sync failed: ${err.message}`, 500);
-  } finally {
-    session.endSession();
-  }
-};
-
-LocalDataSchema.statics.rotateEncryptionKey = async function(newKey) {
-  if (!newKey) {
-    throw new AppError('New encryption key must be provided', 400);
-  }
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    // Get all encrypted documents
-    const encryptedDocs = await this.find({ 
-      'encryption.enabled': true 
-    }).session(session);
-
-    // Re-encrypt with new key
-    for (const doc of encryptedDocs) {
-      const decryptedValue = doc.decryptValue();
-      doc.value = decryptedValue;
-      doc.encryption.keyVersion += 1;
-      process.env.DATA_ENCRYPTION_KEY = newKey;
-      await doc.save({ session });
-    }
-
-    await session.commitTransaction();
-    return { success: true, count: encryptedDocs.length };
-  } catch (err) {
-    await session.abortTransaction();
-    throw new AppError(`Key rotation failed: ${err.message}`, 500);
   } finally {
     session.endSession();
   }
