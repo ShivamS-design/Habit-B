@@ -15,53 +15,18 @@ const router = express.Router();
 // Apply authentication middleware to all routes
 router.use(verifyUser);
 
-/**
- * @route GET /api/stats
- * @desc Get comprehensive user stats
- * @access Private
- */
-router.get('/', getUserStats);
+// User statistics routes
+router.route('/')
+  .get(getUserStats)    // GET /api/stats - Get user stats
+  .patch(updateUserStats); // PATCH /api/stats - Update user stats
 
-/**
- * @route PATCH /api/stats
- * @desc Update user stats (XP, achievements, etc.)
- * @access Private
- */
-router.patch('/', updateUserStats);
+// Game-specific routes
+router.get('/games/:gameId', getGameSessionStats); // GET /api/stats/games/:gameId - Get game stats
 
-/**
- * @route GET /api/stats/games/:gameId
- * @desc Get game session statistics
- * @access Private
- */
-router.get('/games/:gameId', getGameSessionStats);
-
-/**
- * @route GET /api/stats/leaderboard
- * @desc Get leaderboard statistics
- * @access Private
- */
-router.get('/leaderboard', getLeaderboardStats);
-
-/**
- * @route GET /api/stats/progress
- * @desc Get user progress toward goals
- * @access Private
- */
-router.get('/progress', getUserProgress);
-
-/**
- * @route GET /api/stats/activity
- * @desc Get user activity history (last 50 activities)
- * @access Private
- */
-router.get('/activity', getActivityHistory);
-
-/**
- * @route GET /api/stats/milestones
- * @desc Get achieved milestones
- * @access Private
- */
-router.get('/milestones', getMilestoneAchievements);
+// Progress and activity routes
+router.get('/leaderboard', getLeaderboardStats); // GET /api/stats/leaderboard - Get leaderboard
+router.get('/progress', getUserProgress); // GET /api/stats/progress - Get user progress
+router.get('/activity', getActivityHistory); // GET /api/stats/activity - Get activity history
+router.get('/milestones', getMilestoneAchievements); // GET /api/stats/milestones - Get milestones
 
 export default router;
