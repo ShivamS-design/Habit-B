@@ -1,112 +1,168 @@
 import User from '../models/User.js';
 import GameProgress from '../models/GameProgress.js';
-import ActivityLog from '../models/ActivityLog.js';
-import Milestone from '../models/Milestone.js';
 import AppError from '../utils/appError.js';
 
+/**
+ * @desc    Get comprehensive user stats
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const getUserStats = async (req, res, next) => {
   try {
     const stats = await User.findById(req.user.id)
-      .select('xp level gameStats')
-      .populate('gameStats.badges');
+      .select('xp level gameStats achievements')
+      .populate('gameStats.badges achievements.badge');
       
     res.status(200).json({
       status: 'success',
-      data: { stats }
+      data: stats
     });
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * @desc    Update user stats
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const updateUserStats = async (req, res, next) => {
   try {
+    const updates = {};
+    
+    // Validate and structure updates
+    if (req.body.xp) updates.$inc = { xp: req.body.xp };
+    if (req.body.level) updates.$set = { level: req.body.level };
+    if (req.body.gameStats) updates.$set = { ...updates.$set, gameStats: req.body.gameStats };
+    
     const user = await User.findByIdAndUpdate(
       req.user.id,
-      { $inc: req.body.updates },
-      { new: true }
+      updates,
+      { new: true, runValidators: true }
     );
     
     res.status(200).json({
       status: 'success',
-      data: { user }
+      data: user
     });
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * @desc    Get game session statistics
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const getGameSessionStats = async (req, res, next) => {
   try {
     const stats = await GameProgress.findOne({
       userId: req.user.id,
       gameId: req.params.gameId
-    });
+    }).lean();
+    
+    if (!stats) {
+      return next(new AppError('No game progress found', 404));
+    }
     
     res.status(200).json({
       status: 'success',
-      data: { stats }
+      data: stats
     });
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * @desc    Get leaderboard statistics
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const getLeaderboardStats = async (req, res, next) => {
   try {
     const leaderboard = await User.find()
       .sort({ xp: -1, level: -1 })
       .limit(100)
-      .select('username xp level avatar');
+      .select('username avatar xp level gameStats.totalWins')
+      .lean();
     
     res.status(200).json({
       status: 'success',
-      data: { leaderboard }
+      data: leaderboard
     });
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * @desc    Get user progress toward goals
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const getUserProgress = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id)
-      .select('gameStats.goals');
+      .select('gameStats.goals achievements')
+      .lean();
     
     res.status(200).json({
       status: 'success',
-      data: { progress: user.gameStats.goals }
+      data: {
+        goals: user.gameStats?.goals || [],
+        achievements: user.achievements || []
+      }
     });
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * @desc    Get user activity history
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const getActivityHistory = async (req, res, next) => {
   try {
-    const activities = await ActivityLog.find({ userId: req.user.id })
-      .sort({ createdAt: -1 })
-      .limit(50);
+    const user = await User.findById(req.user.id)
+      .select('activityLog')
+      .lean();
     
     res.status(200).json({
       status: 'success',
-      data: { activities }
+      data: user.activityLog || []
     });
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * @desc    Get milestone achievements
+ * @param   {Object} req - Express request object
+ * @param   {Object} res - Express response object
+ * @param   {Function} next - Express next middleware
+ */
 export const getMilestoneAchievements = async (req, res, next) => {
   try {
-    const milestones = await Milestone.find({
-      userId: req.user.id,
-      achieved: true
-    }).sort({ dateAchieved: -1 });
+    const user = await User.findById(req.user.id)
+      .select('achievements')
+      .populate('achievements.badge')
+      .lean();
     
     res.status(200).json({
       status: 'success',
-      data: { milestones }
+      data: user.achievements?.filter(a => a.isMilestone) || []
     });
   } catch (err) {
     next(err);
