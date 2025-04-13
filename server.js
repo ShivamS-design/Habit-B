@@ -42,13 +42,7 @@ const RAILWAY_PUBLIC_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN;
 // Database Connection - Updated with modern options
 const connectDB = async () => {
   try {
-    await mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-      // Removed deprecated options:
-      // useCreateIndex: true, 
-      // useFindAndModify: false
-    });
+    await mongoose.connect(MONGODB_URI);
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('MongoDB connection error:', err);
