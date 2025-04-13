@@ -1,13 +1,18 @@
 import express from 'express';
-import { spinWheel, getSpinStats } from '../controllers/spinWheelController.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { 
+  spinWheel, 
+  getSpinStats 
+} from '../controllers/spinWheelController.js';
+import { verifyUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.use(verifyToken);
+// Protect all spin wheel routes with authentication
+router.use(verifyUser);
 
+// Spin wheel routes
 router.route('/')
-  .post(spinWheel)
-  .get(getSpinStats);
+  .post(spinWheel)      // POST: Spin the wheel (protected)
+  .get(getSpinStats);   // GET: Get spin statistics (protected)
 
 export default router;
