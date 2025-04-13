@@ -33,25 +33,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // Constants
-const PORT = process.env.PORT || 5000; // Server port
+const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000'; // Frontend port
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const RAILWAY_PUBLIC_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN;
 
-// Database Connection
+// Database Connection - Updated with modern options
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
       useNewUrlParser: true,
-      useUnifiedTopology: true,
-      useCreateIndex: true,
-      useFindAndModify: false
+      useUnifiedTopology: true
+      // Removed deprecated options:
+      // useCreateIndex: true, 
+      // useFindAndModify: false
     });
     console.log('MongoDB connected successfully');
-    
-    // Remove the manual index creation to avoid duplicates
-    // Indexes should be defined in the schemas only
   } catch (err) {
     console.error('MongoDB connection error:', err);
     process.exit(1);
@@ -66,7 +64,7 @@ app.use(mongoSanitize());
 app.use(hpp());
 app.use(cookieParser());
 
-// Rate limiting (now using centralized config)
+// Rate limiting
 app.use('/api', apiLimiter);
 
 // Body parser
@@ -76,7 +74,7 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// CORS - Updated configuration
+// CORS Configuration
 const allowedOrigins = [
   CLIENT_URL,
   RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : null,
@@ -85,10 +83,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -145,7 +140,7 @@ app.use(errorHandler);
 // ======================
 // SERVER STARTUP
 // ======================
-let server; // Define server variable for graceful shutdown
+let server;
 
 const startServer = async () => {
   await connectDB();
@@ -159,7 +154,6 @@ const startServer = async () => {
     }
   });
 
-  // Handle server errors
   server.on('error', (err) => {
     console.error('Server error:', err);
     process.exit(1);
@@ -179,7 +173,6 @@ process.on('uncaughtException', (err) => {
   server?.close(() => process.exit(1));
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
   server?.close(() => {
